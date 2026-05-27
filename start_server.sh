@@ -1,4 +1,5 @@
 #!/bin/bash
 # Iniciar servidor Flask del sistema de timbres
-cd /home/admins/colegio
+# PROJECT_DIR se autodetecta desde la ubicación del script
+cd "$(dirname "$0")"
 python3 -m app

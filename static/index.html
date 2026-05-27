@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sistema de Timbres - Colegio</title>
+    <title>Timbres María Grao</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
@@ -53,13 +53,55 @@
         .toast.error { background: #dc3545; }
         .duracion-control input:disabled { background: #f0f0f0; color: #999; }
         .duracion-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.8em; }
+        /* ── Mute Button ── */
+        .mute-card { margin-bottom: 20px; }
+        .mute-btn {
+            display: block;
+            width: 100%;
+            padding: 32px 24px;
+            border: none;
+            border-radius: 12px;
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            cursor: pointer;
+            transition: background 0.25s ease, box-shadow 0.25s ease, transform 0.15s ease;
+            text-transform: uppercase;
+        }
+        .mute-btn:active { transform: scale(0.98); }
+        .mute-btn:disabled { opacity: 0.7; cursor: not-allowed; transform: none; }
+        .mute-btn.unmuted {
+            background: #28a745;
+            color: white;
+            box-shadow: 0 4px 14px rgba(40, 167, 69, 0.35);
+        }
+        .mute-btn.unmuted:hover { background: #218838; }
+        .mute-btn.muted {
+            background: #dc3545;
+            color: white;
+            box-shadow: 0 4px 14px rgba(220, 53, 69, 0.35);
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        .mute-btn.muted:hover { background: #c82333; }
+        @keyframes pulse {
+            0%   { box-shadow: 0 4px 14px rgba(220, 53, 69, 0.35); }
+            50%  { box-shadow: 0 4px 28px rgba(220, 53, 69, 0.65); }
+            100% { box-shadow: 0 4px 14px rgba(220, 53, 69, 0.35); }
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div style="display: flex; justify-content: space-between; align-items: center;">
-            <h1>Sistema de Timbres - Colegio</h1>
+            <h1>🔔 Timbres María Grao</h1>
             <button class="btn btn-secondary btn-sm" onclick="logout()">Cerrar Sesión</button>
+        </div>
+        
+        <div class="card mute-card">
+            <button id="mute-btn" class="mute-btn unmuted" onclick="toggleMute()"
+                    title="Activar/Desactivar todos los timbres">
+                🎵 TIMBRES ACTIVOS
+            </button>
         </div>
         
         <div class="card">
@@ -98,13 +140,14 @@
         </div>
     </div>
     
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="/static/socket.io.min.js"></script>
     <script>
         const TIPO_LABELS = {entrada: 'Entrada', salida: 'Salida', cambio: 'Cambio', recreo: 'Recreo'};
         const TIPOS = ['entrada', 'salida', 'cambio', 'recreo'];
         let socket;
         let horariosData = {};
         let duracionesData = {};
+        let muteUpdating = false;
         
         // ========== Token Management ==========
         
@@ -157,9 +200,26 @@
                 document.getElementById('status-dot').className = 'status-dot connected';
                 document.getElementById('status-text').textContent = 'Conectado';
             });
-            socket.on('disconnect', () => {
+            socket.on('disconnect', (reason) => {
                 document.getElementById('status-dot').className = 'status-dot disconnected';
                 document.getElementById('status-text').textContent = 'Desconectado';
+                console.warn('Socket desconectado:', reason);
+            });
+            socket.on('connect_error', (err) => {
+                console.error('Error de conexión socket:', err.message);
+                document.getElementById('status-text').textContent = 'Error: ' + err.message;
+            });
+            
+            // ── MUTE: Escuchar cambios en tiempo real ──
+            socket.on('muted_changed', (data) => {
+                actualizarBotonMute(data.muted);
+            });
+            
+            // ── MUTE: El estado general también incluye muted ──
+            socket.on('estado_actualizado', (data) => {
+                if (data.muted !== undefined) {
+                    actualizarBotonMute(data.muted);
+                }
             });
         }
         
@@ -396,11 +456,70 @@
             window.location.href = '/login';
         }
         
+        // ── Mute Button ──
+        
+        async function cargarEstadoMute() {
+            try {
+                const resp = await fetch('/api/muted');
+                const data = await resp.json();
+                if (data.success) {
+                    actualizarBotonMute(data.muted);
+                }
+            } catch (e) {
+                console.error('Error al cargar estado mute:', e);
+            }
+        }
+        
+        async function toggleMute() {
+            if (muteUpdating) return;
+            muteUpdating = true;
+            const btn = document.getElementById('mute-btn');
+            btn.disabled = true;
+            btn.textContent = '⏳ MUTANDO...';
+            
+            try {
+                const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
+                const resp = await fetch('/api/muted/toggle', {
+                    method: 'POST',
+                    headers: headers,
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    actualizarBotonMute(data.muted);
+                } else {
+                    mostrarToast('❌ Error: ' + (data.error || 'desconocido'), true);
+                    muteUpdating = false;
+                    btn.disabled = false;
+                }
+            } catch (e) {
+                mostrarToast('❌ Error de conexión', true);
+                console.error(e);
+                muteUpdating = false;
+                btn.disabled = false;
+            }
+        }
+        
+        function actualizarBotonMute(muted) {
+            const btn = document.getElementById('mute-btn');
+            if (muted) {
+                btn.className = 'mute-btn muted';
+                btn.textContent = '🎙️ MUTEADO';
+                btn.title = 'Timbres silenciados — tocar para reactivar';
+            } else {
+                btn.className = 'mute-btn unmuted';
+                btn.textContent = '🎵 TIMBRES ACTIVOS';
+                btn.title = 'Timbres activos — tocar para silenciar';
+            }
+            btn.disabled = false;
+            muteUpdating = false;
+        }
+        
         // Init
         window.onload = () => {
             connectWebSocket();
             cargarHorarios();
             cargarColas();
+            cargarEstadoMute();  // Fetch initial mute state
             // Verificar expiry de token cada 60 segundos
             setInterval(checkTokenExpiry, 60000);
             // Verificar al cargar también

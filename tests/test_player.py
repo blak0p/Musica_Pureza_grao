@@ -14,9 +14,10 @@ class TestMusicPlayerInit(unittest.TestCase):
     """Test MusicPlayer initialization."""
 
     def test_init_sets_music_base_default(self):
-        """MusicPlayer uses default music base when not specified."""
+        """MusicPlayer uses default music base from config when not specified."""
+        from src import config
         player = MusicPlayer()
-        self.assertEqual(player.music_base, "/home/admins/musica")
+        self.assertEqual(player.music_base, str(config.MUSIC_DIR))
 
     def test_init_accepts_custom_music_base(self):
         """MusicPlayer accepts custom music base path."""
@@ -78,10 +79,11 @@ class TestMusicPlayerRunMpv(unittest.TestCase):
 
     @patch('src.player.subprocess.run')
     def test_run_mpv_calls_subprocess_with_correct_args(self, mock_run):
-        """Verify mpv is called with --length=35 --no-terminal --really-quiet."""
+        """Verify mpv is called with --ao=alsa, --audio-device=..., --no-terminal, --really-quiet."""
         mock_run.return_value = MagicMock(returncode=0)
+        self.player.state.get_alsa_device = MagicMock(return_value="sysdefault:CARD=PCH")
 
-        self.player._run_mpv("/path/to/song.mp3")
+        self.player._run_mpv("/path/to/song.mp3", duration=35)
 
         # Check subprocess.run was called
         mock_run.assert_called_once()
@@ -89,10 +91,12 @@ class TestMusicPlayerRunMpv(unittest.TestCase):
 
         # First arg should be the command list
         cmd = args[0][0]
-        self.assertEqual(cmd[0], "mpv")
-        self.assertIn("--length=35", cmd)
+        self.assertEqual(cmd[0], "/usr/bin/mpv")
+        self.assertIn("--ao=alsa", cmd)
+        self.assertIn("--audio-device=alsa/sysdefault:CARD=PCH", cmd)
         self.assertIn("--no-terminal", cmd)
         self.assertIn("--really-quiet", cmd)
+        self.assertIn("--length=35", cmd)
         self.assertEqual(cmd[-1], "/path/to/song.mp3")
 
     @patch('src.player.subprocess.run')
@@ -192,46 +196,45 @@ class TestMusicPlayerDuration(unittest.TestCase):
 
     @patch('src.player.subprocess.run')
     def test_run_mpv_no_duration_uses_600s_timeout(self, mock_run):
-        """_run_mpv with duration=None does NOT add -t flag, uses 600s timeout (full song)."""
+        """_run_mpv with duration=None does NOT add --length flag, uses 600s timeout (full song)."""
         mock_run.return_value = MagicMock(returncode=0)
 
         self.player._run_mpv("/path/to/song.mp3", duration=None)
 
         self.assertEqual(mock_run.return_value.returncode, 0)
-        # Should NOT have -t flag
+        # Should NOT have --length or -t flag
         cmd = mock_run.call_args[0][0]
         self.assertNotIn("-t", cmd)
+        self.assertNotIn("--length", cmd)
         # Should have 600s timeout for full song
         self.assertEqual(mock_run.call_args[1]['timeout'], 600)
 
     # ── Task 2.2: _run_mpv with duration=30 (has -t 30, timeout=65) ──
 
     @patch('src.player.subprocess.run')
-    def test_run_mpv_with_duration_adds_t_flag_and_dynamic_timeout(self, mock_run):
-        """_run_mpv with duration=30 adds -t 30 and timeout=65 (30*2+5)."""
+    def test_run_mpv_with_duration_adds_length_flag_and_dynamic_timeout(self, mock_run):
+        """_run_mpv with duration=30 adds --length=30 and timeout=65 (30*2+5)."""
         mock_run.return_value = MagicMock(returncode=0)
 
         self.player._run_mpv("/path/to/song.mp3", duration=30)
 
         mock_run.assert_called_once()
         cmd = mock_run.call_args[0][0]
-        self.assertIn("-t", cmd)
-        t_idx = cmd.index("-t")
-        self.assertEqual(cmd[t_idx + 1], "30")
+        self.assertIn("--length=30", cmd)
         self.assertEqual(mock_run.call_args[1]['timeout'], 65)
 
     # ── Task 2.3: timeout clamped to minimum 40s ──
 
     @patch('src.player.subprocess.run')
     def test_run_mpv_with_short_duration_clamps_timeout_to_minimum(self, mock_run):
-        """_run_mpv with duration=5 still has -t 5 but timeout clamped to 40 (min)."""
+        """_run_mpv with duration=5 still has --length=5 but timeout clamped to 40 (min)."""
         mock_run.return_value = MagicMock(returncode=0)
 
         self.player._run_mpv("/path/to/song.mp3", duration=5)
 
         mock_run.assert_called_once()
         cmd = mock_run.call_args[0][0]
-        self.assertIn("-t", cmd)
+        self.assertIn("--length=5", cmd)
         self.assertEqual(mock_run.call_args[1]['timeout'], 40)
 
     # ── Task 2.3: timeout capped at maximum 600s ──
@@ -245,7 +248,7 @@ class TestMusicPlayerDuration(unittest.TestCase):
 
         mock_run.assert_called_once()
         cmd = mock_run.call_args[0][0]
-        self.assertIn("-t", cmd)
+        self.assertIn("--length=350", cmd)
         self.assertEqual(mock_run.call_args[1]['timeout'], 600)
 
     # ── Task 2.1: play() consults state.get_duration() and passes to _run_mpv ──
@@ -279,6 +282,81 @@ class TestMusicPlayerDuration(unittest.TestCase):
 
         self.player.state.get_duration.assert_called_once_with("salida")
         mock_run_mpv.assert_called_once_with("/path/to/song.mp3", None)
+
+
+class TestMusicPlayerMuteGuard(unittest.TestCase):
+    """Test MusicPlayer.play() mute guard — defense in depth."""
+
+    def setUp(self):
+        """Create temp directory with music."""
+        self.temp_dir = tempfile.mkdtemp()
+        self.music_base = os.path.join(self.temp_dir, "musica")
+        self.music_type = "cambio"
+        self.music_folder = os.path.join(self.music_base, self.music_type)
+        os.makedirs(self.music_folder)
+
+        # Create a test song
+        self.test_song = "test_song.mp3"
+        with open(os.path.join(self.music_folder, self.test_song), "w") as f:
+            f.write("")
+
+        self.player = MusicPlayer(music_base=self.music_base)
+
+    def tearDown(self):
+        shutil.rmtree(self.temp_dir)
+
+    @patch('src.player.MusicPlayer._run_mpv')
+    def test_play_returns_early_when_muted(self, mock_run_mpv):
+        """GIVEN state.get_muted() returns True
+        WHEN play() called
+        THEN returns without calling _run_mpv"""
+        self.player.state.get_muted = MagicMock(return_value=True)
+        mock_run_mpv.return_value = 0
+
+        self.player.play(self.music_type)
+
+        mock_run_mpv.assert_not_called()
+
+    @patch('src.player.logger')
+    @patch('src.player.MusicPlayer._run_mpv')
+    def test_play_logs_muted_message(self, mock_run_mpv, mock_logger):
+        """GIVEN system is muted
+        WHEN play() called
+        THEN logs 'System muted' message"""
+        self.player.state.get_muted = MagicMock(return_value=True)
+        mock_run_mpv.return_value = 0
+
+        self.player.play(self.music_type)
+
+        # Should log a message containing "skipping" or "muted"
+        found = any("skipping" in str(call) or "muted" in str(call).lower()
+                    for call in mock_logger.info.call_args_list)
+        self.assertTrue(found, "Expected logger to record muted/skipping message")
+
+    @patch('src.player.MusicPlayer._run_mpv')
+    def test_play_mute_check_before_folder_validation(self, mock_run_mpv):
+        """GIVEN system is muted
+        WHEN play() called
+        THEN validate_folder is NOT called (mute guard fires first)"""
+        self.player.state.get_muted = MagicMock(return_value=True)
+        self.player.library.validate_folder = MagicMock(return_value=True)
+        mock_run_mpv.return_value = 0
+
+        self.player.play(self.music_type)
+
+        self.player.library.validate_folder.assert_not_called()
+
+    @patch('src.player.MusicPlayer._run_mpv')
+    def test_play_normal_flow_when_not_muted(self, mock_run_mpv):
+        """GIVEN state.get_muted() returns False
+        WHEN play() called
+        THEN proceeds to call _run_mpv (normal flow)"""
+        self.player.state.get_muted = MagicMock(return_value=False)
+        mock_run_mpv.return_value = 0
+
+        self.player.play(self.music_type)
+
+        mock_run_mpv.assert_called_once()
 
 
 if __name__ == "__main__":

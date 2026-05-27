@@ -94,25 +94,26 @@ class TestCronHelperGenerateCrontab(unittest.TestCase):
         lines = [line for line in crontab.strip().split('\n') if line.strip() and line.strip()[0].isdigit()]
         self.assertEqual(len(lines), 11)
 
-    def test_generate_crontab_includes_display_and_xdg_vars(self):
-        """Each entry includes DISPLAY=:0 and XDG_RUNTIME_DIR."""
+    def test_generate_crontab_does_not_include_display_or_xdg_vars(self):
+        """No cron entry includes DISPLAY= or XDG_RUNTIME_DIR."""
         from src.cron_helper import CronHelper
 
         helper = CronHelper()
         crontab = helper.generate_crontab()
 
-        self.assertIn("DISPLAY=:0", crontab)
-        self.assertIn("XDG_RUNTIME_DIR=/run/user/1000", crontab)
+        self.assertNotIn("DISPLAY=:0", crontab)
+        self.assertNotIn("XDG_RUNTIME_DIR=/run/user/1000", crontab)
 
     def test_generate_crontab_calls_bell_py_with_python3(self):
-        """Each entry calls bell.py using python3."""
+        """Each entry calls bell.py via /usr/bin/python3."""
         from src.cron_helper import CronHelper
 
         helper = CronHelper()
         crontab = helper.generate_crontab()
 
-        # Should call bell.py via python3
-        self.assertIn("python3 bell.py", crontab)
+        # Should call bell.py via /usr/bin/python3 with full project path
+        self.assertIn("/usr/bin/python3", crontab)
+        self.assertIn("bell.py", crontab)
 
     def test_generate_crontab_has_correct_time_format(self):
         """Cron entries have correct minute and hour format."""
@@ -218,7 +219,7 @@ class TestCronHelperRemove(unittest.TestCase):
         # Mock: crontab -l returns our entries
         mock_run.return_value = MagicMock(
             returncode=0,
-            stdout="DISPLAY=:0\nXDG_RUNTIME_DIR=/run/user/1000\n5 8 * * 1-5 cd /home/admins/colegio && python3 bell.py entrada\n",
+            stdout="DISPLAY=:0\nXDG_RUNTIME_DIR=/run/user/1000\n5 8 * * 1-5 /usr/bin/python3 /path/to/project/bell.py entrada\n",
         )
 
         helper = CronHelper()

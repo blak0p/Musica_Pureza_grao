@@ -12,3 +12,8 @@ RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
+
+# NOTA: Este archivo es un template con paths absolutos.
+# Para regenerarlo con los paths correctos de tu máquina, ejecuta:
+#   python3 setup_service.py --install
+# (requiere sudo para instalar en /etc/systemd/system/)

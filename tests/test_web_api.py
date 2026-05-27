@@ -4,7 +4,7 @@ import json
 import pytest
 import sys
 import os
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -291,6 +291,74 @@ class TestAPIDuraciones:
             data = json.loads(response.data)
             assert data["success"] is True
             mock_update.assert_called_once_with({})
+
+
+class TestAPIMute:
+    """Tests for /api/muted endpoints."""
+
+    def test_get_muted_no_auth_returns_state(self, client):
+        """GET /api/muted without auth returns 200 with muted state."""
+        response = client.get("/api/muted")
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["success"] is True
+        assert "muted" in data
+
+    def test_get_muted_default_false(self, client):
+        """GET /api/muted returns muted: false initially."""
+        response = client.get("/api/muted")
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["muted"] is False
+
+    def test_post_mute_toggle_requires_auth(self, client):
+        """POST /api/muted/toggle without auth returns 401."""
+        response = client.post("/api/muted/toggle")
+        assert response.status_code == 401
+        data = json.loads(response.data)
+        assert data["success"] is False
+
+    @patch("app.subprocess.run")
+    @patch("app.broadcast_estado")
+    def test_post_mute_toggle_authenticated(self, mock_broadcast, mock_subprocess, authenticated_client):
+        """POST /api/muted/toggle with auth returns 200 with toggled state."""
+        mock_subprocess.return_value = MagicMock(returncode=0)
+
+        response = authenticated_client.post("/api/muted/toggle")
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["success"] is True
+        assert data["muted"] is True
+
+    @patch("app.subprocess.run")
+    @patch("app.broadcast_estado")
+    def test_post_mute_toggle_twice(self, mock_broadcast, mock_subprocess, authenticated_client):
+        """Toggle twice returns to original state (second response differs from first)."""
+        mock_subprocess.return_value = MagicMock(returncode=0)
+
+        # First toggle — capture current state
+        resp1 = authenticated_client.post("/api/muted/toggle")
+        data1 = json.loads(resp1.data)
+        assert data1["success"] is True
+
+        # Second toggle — should return to original state
+        resp2 = authenticated_client.post("/api/muted/toggle")
+        data2 = json.loads(resp2.data)
+        assert data2["success"] is True
+        # Second toggle should be opposite of first (back to original)
+        assert data2["muted"] is not data1["muted"]
+
+    @patch("app.subprocess.run")
+    @patch("app.broadcast_estado")
+    def test_post_mute_toggle_pkill_called(self, mock_broadcast, mock_subprocess, authenticated_client):
+        """Verify pkill mpv is called when toggling."""
+        mock_subprocess.return_value = MagicMock(returncode=0)
+
+        authenticated_client.post("/api/muted/toggle")
+
+        mock_subprocess.assert_called_once()
+        args = mock_subprocess.call_args[0][0]
+        assert args == ["pkill", "mpv"]
 
 
 if __name__ == "__main__":

@@ -6,12 +6,14 @@ import shutil
 import tempfile
 import time
 
+from src import config
+
 
 class StateManager:
     """Persistent state storage in JSON format."""
 
-    STATE_DIR = "/home/admins/colegio/state"
-    STATE_FILE = f"{STATE_DIR}/carousel.json"
+    STATE_DIR = config.STATE_DIR
+    STATE_FILE = config.STATE_FILE
 
     def load(self) -> dict:
         """Load state dict. Returns empty dict if missing/corrupt.
@@ -134,3 +136,37 @@ class StateManager:
         state = self.load()
         state["durations"] = durations
         self.save(state)
+
+    # ALSA device management
+    def get_alsa_device(self) -> str:
+        """Return configured ALSA device name or default.
+
+        Reads 'alsa_device' key from state dict.
+        Returns 'sysdefault:CARD=PCH' if not set.
+        """
+        return self.load().get("alsa_device", "sysdefault:CARD=PCH")
+
+    def set_alsa_device(self, device: str) -> None:
+        """Persist ALSA device name to state under 'alsa_device' key."""
+        state = self.load()
+        state["alsa_device"] = device
+        self.save(state)
+
+    # Mute management (global mute toggle)
+    def get_muted(self) -> bool:
+        """Return muted boolean. Defaults to False if not set."""
+        return self.load().get("muted", False)
+
+    def set_muted(self, muted: bool) -> None:
+        """Persist muted boolean to state atomically."""
+        state = self.load()
+        state["muted"] = muted
+        self.save(state)
+
+    def toggle_muted(self) -> bool:
+        """Flip muted boolean and persist. Returns the NEW state."""
+        state = self.load()
+        new_state = not state.get("muted", False)
+        state["muted"] = new_state
+        self.save(state)
+        return new_state

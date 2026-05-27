@@ -2,6 +2,8 @@
 
 import os
 
+from src import config
+
 
 class MusicFolderError(Exception):
     """Raised when music folder is empty or missing."""
@@ -13,8 +15,8 @@ class MusicLibrary:
 
     SUPPORTED_EXTENSIONS = {".mp3", ".wav", ".flac", ".ogg", ".mp4", ".m4a"}
 
-    def __init__(self, base_dir: str = "/home/admins/musica"):
-        self.base_dir = base_dir
+    def __init__(self, base_dir: str | None = None):
+        self.base_dir = base_dir if base_dir is not None else str(config.MUSIC_DIR)
 
     def scan(self, music_type: str) -> list[str]:
         """Return sorted list of audio files in folder.

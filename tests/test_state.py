@@ -352,5 +352,206 @@ class TestStateManagerDurations(unittest.TestCase):
         self.assertEqual(manager.get_duration("entrada"), 45)
 
 
+class TestStateManagerAlsaDevice(unittest.TestCase):
+    """Test get_alsa_device and set_alsa_device methods."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.state_file = os.path.join(self.temp_dir, "carousel.json")
+        StateManager.STATE_FILE = self.state_file
+        StateManager.STATE_DIR = self.temp_dir
+
+    def tearDown(self):
+        shutil.rmtree(self.temp_dir)
+
+    def test_get_alsa_device_returns_default_when_not_set(self):
+        """GIVEN state has NO alsa_device key
+        WHEN get_alsa_device() called
+        THEN returns 'sysdefault:CARD=PCH'"""
+        manager = StateManager()
+        manager.save({})
+        result = manager.get_alsa_device()
+        self.assertEqual(result, "sysdefault:CARD=PCH")
+
+    def test_set_and_get_alsa_device_round_trip(self):
+        """GIVEN state has alsa_device set to 'hw:0,0'
+        WHEN get_alsa_device() called
+        THEN returns 'hw:0,0'"""
+        manager = StateManager()
+        manager.save({})
+        manager.set_alsa_device("hw:0,0")
+        result = manager.get_alsa_device()
+        self.assertEqual(result, "hw:0,0")
+
+    def test_alsa_device_persists_in_json_file(self):
+        """GIVEN alsa_device set to 'hw:1,0'
+        WHEN a new StateManager loads from disk
+        THEN get_alsa_device() returns 'hw:1,0'"""
+        manager = StateManager()
+        manager.save({})
+        manager.set_alsa_device("hw:1,0")
+        # Reload from disk with fresh instance
+        manager2 = StateManager()
+        result = manager2.get_alsa_device()
+        self.assertEqual(result, "hw:1,0")
+
+    def test_get_alsa_device_returns_value_when_key_exists(self):
+        """GIVEN state has alsa_device key set to 'default:CARD=HDMI'
+        WHEN get_alsa_device() called
+        THEN returns 'default:CARD=HDMI'"""
+        state = {"alsa_device": "default:CARD=HDMI"}
+        with open(StateManager.STATE_FILE, "w") as f:
+            json.dump(state, f)
+        manager = StateManager()
+        result = manager.get_alsa_device()
+        self.assertEqual(result, "default:CARD=HDMI")
+
+    def test_set_alsa_device_updates_existing_value(self):
+        """GIVEN alsa_device is 'hw:0,0'
+        WHEN set_alsa_device('hw:2,0') called
+        THEN get_alsa_device() returns 'hw:2,0'"""
+        manager = StateManager()
+        manager.save({})
+        manager.set_alsa_device("hw:0,0")
+        manager.set_alsa_device("hw:2,0")
+        result = manager.get_alsa_device()
+        self.assertEqual(result, "hw:2,0")
+
+
+class TestStateManagerMute(unittest.TestCase):
+    """Test get_muted, set_muted, and toggle_muted methods."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.state_file = os.path.join(self.temp_dir, "carousel.json")
+        StateManager.STATE_FILE = self.state_file
+        StateManager.STATE_DIR = self.temp_dir
+
+    def tearDown(self):
+        shutil.rmtree(self.temp_dir)
+
+    # --- get_muted() ---
+
+    def test_get_muted_default_false_when_no_file(self):
+        """GIVEN state file does NOT exist
+        WHEN get_muted() called
+        THEN returns False"""
+        manager = StateManager()
+        result = manager.get_muted()
+        self.assertFalse(result)
+
+    def test_get_muted_default_false_when_no_key(self):
+        """GIVEN state file exists WITHOUT muted key
+        WHEN get_muted() called
+        THEN returns False"""
+        manager = StateManager()
+        manager.save({"schedule": {"entrada": ["08:05"]}})
+        result = manager.get_muted()
+        self.assertFalse(result)
+
+    def test_get_muted_returns_true_when_persisted(self):
+        """GIVEN state file has muted: true
+        WHEN get_muted() called
+        THEN returns True"""
+        state = {"muted": True}
+        with open(self.state_file, "w") as f:
+            json.dump(state, f)
+        manager = StateManager()
+        result = manager.get_muted()
+        self.assertTrue(result)
+
+    def test_get_muted_returns_false_when_persisted_false(self):
+        """GIVEN state file has muted: false
+        WHEN get_muted() called
+        THEN returns False"""
+        state = {"muted": False}
+        with open(self.state_file, "w") as f:
+            json.dump(state, f)
+        manager = StateManager()
+        result = manager.get_muted()
+        self.assertFalse(result)
+
+    # --- set_muted() ---
+
+    def test_set_muted_true_then_get_returns_true(self):
+        """GIVEN fresh state
+        WHEN set_muted(True) then get_muted()
+        THEN returns True"""
+        manager = StateManager()
+        manager.save({})
+        manager.set_muted(True)
+        self.assertTrue(manager.get_muted())
+
+    def test_set_muted_false_then_get_returns_false(self):
+        """GIVEN state with muted: true
+        WHEN set_muted(False) then get_muted()
+        THEN returns False"""
+        manager = StateManager()
+        manager.save({"muted": True})
+        manager.set_muted(False)
+        self.assertFalse(manager.get_muted())
+
+    def test_set_muted_is_atomic_no_temp_files(self):
+        """GIVEN fresh state
+        WHEN set_muted(True) called
+        THEN no .tmp. files remain after operation"""
+        manager = StateManager()
+        manager.save({})
+        manager.set_muted(True)
+        temp_files = [f for f in os.listdir(self.temp_dir)
+                      if f.startswith("carousel.json.tmp.")]
+        self.assertEqual(len(temp_files), 0)
+
+    # --- toggle_muted() ---
+
+    def test_toggle_muted_flips_false_to_true(self):
+        """GIVEN muted is False
+        WHEN toggle_muted() called
+        THEN returns True"""
+        manager = StateManager()
+        manager.save({})
+        result = manager.toggle_muted()
+        self.assertTrue(result)
+
+    def test_toggle_muted_flips_true_to_false(self):
+        """GIVEN muted is True
+        WHEN toggle_muted() called
+        THEN returns False"""
+        manager = StateManager()
+        manager.save({"muted": True})
+        result = manager.toggle_muted()
+        self.assertFalse(result)
+
+    def test_toggle_muted_persists_to_disk(self):
+        """GIVEN state toggled
+        WHEN new StateManager loads from disk
+        THEN reads correct muted value"""
+        manager = StateManager()
+        manager.save({})
+        manager.toggle_muted()  # now True
+        manager2 = StateManager()
+        self.assertTrue(manager2.get_muted())
+
+    def test_toggle_muted_twice_returns_to_original(self):
+        """GIVEN muted is False
+        WHEN toggle_muted() twice
+        THEN returns False (back to original)"""
+        manager = StateManager()
+        manager.save({})
+        manager.toggle_muted()  # True
+        result = manager.toggle_muted()  # False
+        self.assertFalse(result)
+
+    def test_get_muted_handles_corrupt_state(self):
+        """GIVEN carousel.json is corrupt
+        WHEN get_muted() called
+        THEN returns False (backup + empty dict)"""
+        with open(self.state_file, "w") as f:
+            f.write("{broken")
+        manager = StateManager()
+        result = manager.get_muted()
+        self.assertFalse(result)
+
+
 if __name__ == "__main__":
     unittest.main()

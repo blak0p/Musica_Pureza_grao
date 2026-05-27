@@ -2,8 +2,10 @@
 import http.server
 import socketserver
 
+from src import config
+
 PORT = 8080
-DIRECTORY = "/home/admins/public_html/bell"
+DIRECTORY = str(config.STATIC_DIR)
 
 class Handler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):

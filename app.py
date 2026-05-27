@@ -8,38 +8,28 @@ import json
 import logging
 import os
 import shutil
+import subprocess
+import sys
 import tempfile
 import threading
 import time
 import functools
 from datetime import datetime
 
-# Cargar variables de entorno desde .env
-from pathlib import Path
-env_path = Path("/home/admins/colegio/.env")
-if env_path.exists():
-    with open(env_path) as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith('#') and '=' in line:
-                key, value = line.split('=', 1)
-                os.environ[key.strip()] = value.strip()
-
-# Cargar usuario y password desde .env
-WEB_USER = os.environ.get('USER', 'admin')
-WEB_PASSWORD = os.environ.get('PASSWORD', 'admin123')
+# Cargar config centralizada (autodetects .env, paths, etc.)
+from src import config
 
 # Función de autenticación
 def validate_credentials(username: str, password: str) -> bool:
     """Valida usuario y contraseña contra .env"""
-    return username == WEB_USER and password == WEB_PASSWORD
+    return username == config.WEB_USER and password == config.WEB_PASSWORD
 
 from flask import Flask, session as flask_session, jsonify, request, send_from_directory, redirect
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 
 # Import del sistema existente
-from src.cron_helper import load_schedule, PROJECT_DIR
+from src.cron_helper import load_schedule
 from src.library import MusicLibrary, MusicFolderError
 from src.player import MusicPlayer
 from src.state import StateManager
@@ -52,12 +42,22 @@ from src.web_utils import (
 )
 from werkzeug.utils import secure_filename
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Configure logging — console + archivo persistente
+LOG_FILE = str(config.LOG_FILE_SERVER)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%dT%H:%M:%S',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler(LOG_FILE),
+    ]
+)
 logger = logging.getLogger(__name__)
+logger.info(f"Logging to {LOG_FILE}")
 
 # Configuración
-MUSIC_BASE = "/home/admins/musica"
+MUSIC_BASE = str(config.MUSIC_DIR)
 UPLOAD_FOLDER = MUSIC_BASE
 ALLOWED_EXTENSIONS = {".mp3", ".wav", ".flac", ".ogg", ".mp4", ".m4a"}
 MUSIC_TYPES = ["entrada", "salida", "cambio", "recreo"]
@@ -75,8 +75,7 @@ app.config["PERMANENT_SESSION_LIFETIME"] = 0  # Muere al cerrar navegador
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 # Servir archivos estáticos (HTML) desde directorio público
-import os
-STATIC_DIR = "/home/admins/public_html/bell"
+STATIC_DIR = str(config.STATIC_DIR)
 @app.route("/static/<path:filename>")
 def serve_static(filename):
     return send_from_directory(STATIC_DIR, filename)
@@ -95,6 +94,7 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 state_manager = StateManager()
 music_library = MusicLibrary(MUSIC_BASE)
 music_player = MusicPlayer(MUSIC_BASE)
+play_lock = threading.Lock()  # Serializa reproducción y mute (fixes NameError at line 484)
 
 # ============================================================================
 # Autenticación con credenciales Linux
@@ -251,6 +251,7 @@ def broadcast_estado(tipo: str = None):
         data = {
             "tipo": tipo,
             "timestamp": datetime.now().isoformat(),
+            "muted": state_manager.get_muted(),
         }
         
         if tipo:
@@ -260,7 +261,7 @@ def broadcast_estado(tipo: str = None):
             data["last_played_time"] = folder_state.get("last_played_time")
         
         socketio.emit("estado_actualizado", data)
-        logger.info(f"Broadcast estado: {tipo}")
+        logger.info(f"Broadcast estado: {tipo}, muted={data['muted']}")
     except Exception as e:
         logger.error(f"Error en broadcast: {e}")
 
@@ -271,9 +272,15 @@ def broadcast_estado(tipo: str = None):
 
 @socketio.on("connect")
 def handle_connect():
-    """Cliente WebSocket conectado."""
+    """Cliente WebSocket conectado — envía estado inicial incluyendo muted."""
     logger.info(f"Cliente WS conectado: {request.sid}")
-    emit("conectado", {"status": "ok", "timestamp": datetime.now().isoformat()})
+    emit("conectado", {
+        "status": "ok",
+        "timestamp": datetime.now().isoformat(),
+        "muted": state_manager.get_muted(),
+    })
+    # Enviar estado actual completo con muted
+    broadcast_estado()
 
 
 @socketio.on("disconnect")
@@ -496,6 +503,61 @@ def post_reproducir(tipo: str):
         })
     except Exception as e:
         logger.error(f"Error POST /api/reproducir/{tipo}: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ============================================================================
+# API: Mute toggle
+# ============================================================================
+
+@app.route("/api/muted", methods=["GET"])
+def get_muted():
+    """GET /api/muted — Retorna estado actual del mute.
+
+    Sin autenticación para permitir monitoreo público.
+    Returns:
+        JSON: {"success": true, "muted": true/false}
+    """
+    try:
+        muted = state_manager.get_muted()
+        return jsonify({"success": True, "muted": muted})
+    except Exception as e:
+        logger.error(f"Error GET /api/muted: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/muted/toggle", methods=["POST"])
+@require_auth
+def post_mute_toggle():
+    """POST /api/muted/toggle — Toggle mute state.
+
+    Requires authentication (@require_auth).
+    Kills any playing mpv when muting (pkill).
+    Broadcasts muted_changed + estado_actualizado via WebSocket.
+    """
+    try:
+        with play_lock:
+            # Kill any currently playing audio
+            subprocess.run(
+                ["pkill", "mpv"],
+                capture_output=True,
+                timeout=5
+            )
+            new_muted = state_manager.toggle_muted()
+
+        # Broadcast via WebSocket (outside lock to avoid deadlock)
+        socketio.emit("muted_changed", {"muted": new_muted})
+        logger.info(f"Mute toggle: now muted={new_muted}")
+        broadcast_estado()
+
+        return jsonify({"success": True, "muted": new_muted})
+    except subprocess.TimeoutExpired:
+        logger.warning("pkill mpv timed out")
+        new_muted = state_manager.toggle_muted()
+        socketio.emit("muted_changed", {"muted": new_muted})
+        return jsonify({"success": True, "muted": new_muted})
+    except Exception as e:
+        logger.error(f"Error POST /api/muted/toggle: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 
@@ -866,4 +928,13 @@ def serve_index_html():
 
 if __name__ == "__main__":
     logger.info("Iniciando servidor Flask...")
+
+    # Regenerar crontab al iniciar para asegurar que los timbres funcionen
+    try:
+        from src.cron_helper import CronHelper
+        CronHelper().setup()
+        logger.info("Crontab regenerado al iniciar")
+    except Exception as e:
+        logger.error(f"Error al regenerar crontab: {e}")
+
     socketio.run(app, host="0.0.0.0", port=5000, debug=False, allow_unsafe_werkzeug=True)

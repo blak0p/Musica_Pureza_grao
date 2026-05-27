@@ -242,5 +242,106 @@ class TestBellCLIStatus(unittest.TestCase):
             self.assertTrue(mock_print.called)
 
 
+class TestBellCLIMutedCheck(unittest.TestCase):
+    """Test bell.py main() muted guard — defense in depth."""
+
+    @patch('bell.is_weekend')
+    @patch('bell.MusicPlayer')
+    @patch('bell.StateManager')
+    def test_main_muted_skip_logs_message(self, mock_state_class, mock_player_class, mock_is_weekend):
+        """GIVEN system is muted
+        WHEN main() called with music type
+        THEN logs 'System muted - no bell'"""
+        from bell import main, logger
+
+        mock_is_weekend.return_value = False
+        mock_state = MagicMock()
+        mock_state.get_muted.return_value = True
+        mock_state_class.return_value = mock_state
+
+        with patch.object(logger, 'info') as mock_info:
+            main(["cambio"])
+            mock_info.assert_any_call("System muted - no bell")
+
+    @patch('bell.is_weekend')
+    @patch('bell.MusicPlayer')
+    @patch('bell.StateManager')
+    def test_main_muted_does_not_create_player(self, mock_state_class, mock_player_class, mock_is_weekend):
+        """GIVEN system is muted
+        WHEN main() called with music type
+        THEN MusicPlayer is NOT instantiated"""
+        from bell import main
+
+        mock_is_weekend.return_value = False
+        mock_state = MagicMock()
+        mock_state.get_muted.return_value = True
+        mock_state_class.return_value = mock_state
+
+        main(["cambio"])
+
+        mock_player_class.assert_not_called()
+
+    @patch('bell.is_weekend')
+    @patch('bell.MusicPlayer')
+    @patch('bell.StateManager')
+    def test_main_muted_does_not_play(self, mock_state_class, mock_player_class, mock_is_weekend):
+        """GIVEN system is muted
+        WHEN main() called with music type
+        THEN player.play() is NOT called"""
+        from bell import main
+
+        mock_is_weekend.return_value = False
+        mock_state = MagicMock()
+        mock_state.get_muted.return_value = True
+        mock_state_class.return_value = mock_state
+
+        mock_player = MagicMock()
+        mock_player_class.return_value = mock_player
+
+        main(["cambio"])
+
+        mock_player.play.assert_not_called()
+
+    @patch('bell.is_weekend')
+    @patch('bell.MusicPlayer')
+    @patch('bell.StateManager')
+    def test_main_muted_after_weekend_check(self, mock_state_class, mock_player_class, mock_is_weekend):
+        """GIVEN weekend AND muted
+        WHEN main() called
+        THEN weekend check fires first (weekend log, NOT muted log)"""
+        from bell import main, logger
+
+        mock_is_weekend.return_value = True  # Weekend comes first
+        mock_state = MagicMock()
+        mock_state.get_muted.return_value = True
+        mock_state_class.return_value = mock_state
+
+        with patch.object(logger, 'info') as mock_info:
+            main(["cambio"])
+            # Should log weekend message, not muted message
+            mock_info.assert_called_with("Weekend - no bell")
+
+    @patch('bell.is_weekend')
+    @patch('bell.MusicPlayer')
+    @patch('bell.StateManager')
+    def test_main_weekday_unmuted_plays(self, mock_state_class, mock_player_class, mock_is_weekend):
+        """GIVEN weekday AND unmuted
+        WHEN main() called
+        THEN normal play flow proceeds"""
+        from bell import main
+
+        mock_is_weekend.return_value = False
+        mock_state = MagicMock()
+        mock_state.get_muted.return_value = False
+        mock_state_class.return_value = mock_state
+
+        mock_player = MagicMock()
+        mock_player_class.return_value = mock_player
+
+        main(["cambio"])
+
+        mock_player.play.assert_called_once_with("cambio")
+
+
 if __name__ == "__main__":
     unittest.main()

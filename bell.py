@@ -6,6 +6,7 @@ import logging
 import sys
 from datetime import datetime
 
+from src import config
 from src.player import MusicPlayer
 from src.cron_helper import CronHelper
 from src.library import MusicLibrary
@@ -14,8 +15,11 @@ from src.state import StateManager
 logger = logging.getLogger(__name__)
 
 
-def setup_logging(log_file='/var/log/colegio-bell.log'):
+def setup_logging(log_file: str | None = None):
     """Configure logging with fallback to project directory if no permission."""
+    if log_file is None:
+        log_file = str(config.LOG_FILE_BELL)
+
     handlers = [logging.StreamHandler(sys.stdout)]
     
     # Try to use the specified log file, fallback to local if no permission
@@ -24,7 +28,7 @@ def setup_logging(log_file='/var/log/colegio-bell.log'):
         handlers.append(file_handler)
     except PermissionError:
         # Fallback: use state/ directory in project
-        local_log = '/home/admins/colegio/state/colegio-bell.log'
+        local_log = str(config.LOG_FILE_BELL)
         file_handler = logging.FileHandler(local_log)
         handlers.append(file_handler)
         print(f"Warning: No permission for {log_file}, using {local_log}", file=sys.stderr)
@@ -205,6 +209,13 @@ def main(args=None):
         if is_weekend():
             logger.info("Weekend - no bell")
             print("Weekend - no bell")
+            return
+
+        # ── MUTED CHECK (defense in depth) ──
+        state = StateManager()
+        if state.get_muted():
+            logger.info("System muted - no bell")
+            print("System muted - no bell")
             return
 
         # Play the music type

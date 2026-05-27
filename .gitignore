@@ -37,3 +37,6 @@ state/
 
 # Environment variables (credentials)
 .env
+
+# Virtual environment
+.venv/

@@ -3,6 +3,7 @@
 import subprocess
 import logging
 
+from src import config
 from src.library import MusicLibrary, MusicFolderError
 from src.carousel import SmartCarousel
 from src.state import StateManager
@@ -14,8 +15,8 @@ logger = logging.getLogger(__name__)
 class MusicPlayer:
     """Orchestrates music playback for school bell system."""
 
-    def __init__(self, music_base: str = "/home/admins/musica"):
-        self.music_base = music_base
+    def __init__(self, music_base: str | None = None):
+        self.music_base = music_base if music_base is not None else str(config.MUSIC_DIR)
         self.library = MusicLibrary(music_base)
         self.state = StateManager()
         self.carousels: dict[str, SmartCarousel] = {}
@@ -23,6 +24,11 @@ class MusicPlayer:
     def play(self, music_type: str) -> None:
         """Play next song for given music type."""
         try:
+            # ── MUTE GUARD (defense in depth) ──
+            if self.state.get_muted():
+                logger.info(f"System muted — skipping {music_type}")
+                return
+
             # Validate folder first
             if not self.library.validate_folder(music_type):
                 logger.warning(f"Folder missing or empty: {music_type}")
@@ -56,21 +62,27 @@ class MusicPlayer:
         return self.carousels[music_type]
 
     def _run_mpv(self, file_path: str, duration: int | None = None) -> int:
-        """Execute ffplay subprocess with proper args.
+        """Execute mpv subprocess with proper args.
 
-        When duration is set (>0), adds -t N flag and adjusts timeout.
+        Uses ALSA directly (no PulseAudio/PipeWire dependency).
+        ALSA device is read from StateManager (default: sysdefault:CARD=PCH).
+
+        When duration is set (>0), adds --length=N flag and adjusts timeout.
         When duration is None or 0 (full song), plays with 600s timeout.
 
-        Returns exit code from ffplay.
+        Returns exit code from mpv.
         """
         try:
+            alsa_device = self.state.get_alsa_device()
             cmd = [
-                "/usr/bin/ffplay",
-                "-nodisp",
-                "-autoexit",
+                "/usr/bin/mpv",
+                "--ao=alsa",
+                f"--audio-device=alsa/{alsa_device}",
+                "--no-terminal",
+                "--really-quiet",
             ]
             if duration is not None and duration > 0:
-                cmd.extend(["-t", str(duration)])
+                cmd.append(f"--length={duration}")
                 timeout = max(40, min(600, duration * 2 + 5))
             else:
                 timeout = 600  # Canción completa — timeout generoso
@@ -83,11 +95,11 @@ class MusicPlayer:
             )
             return result.returncode
         except FileNotFoundError:
-            logger.error("ffplay not found in /usr/bin/ffplay")
+            logger.error("mpv not found at /usr/bin/mpv")
             return 1
         except subprocess.TimeoutExpired:
-            logger.error(f"ffplay timeout for {file_path}")
+            logger.error(f"mpv timeout for {file_path}")
             return 1
         except Exception as e:
-            logger.error(f"ffplay failed: {e}")
+            logger.error(f"mpv failed: {e}")
             return 1
