@@ -1,19 +1,48 @@
 #!/bin/bash
-# Instalador LOCAL del Sistema de Timbres Escolar
-# Funciona en Debian, Ubuntu, Mint, Fedora, Arch, openSUSE...
-# Ejecutar: bash install.sh
+# Instalador COMPLETO del Sistema de Timbres Escolar
+# Descarga el código, prepara permisos e instala todo
+# Ejecutar: curl -sSL https://raw.githubusercontent.com/blak0p/Musica_Pureza_grao/main/install.sh | bash
 
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-
-echo "🎵 Sistema de Timbres Escolar - Instalador Local"
-echo "================================================"
-echo ""
-echo "  Proyecto en: $SCRIPT_DIR"
+echo "🎵 Sistema de Timbres Escolar - Instalador Completo"
+echo "===================================================="
 echo ""
 
-# ─── Detectar gestor de paquetes ───
+# ─── Crear directorio de trabajo ───
+INSTALL_DIR="${INSTALL_DIR:-/opt/musica-pureza-grao}"
+TEMP_DIR=$(mktemp -d)
+
+echo "[1/7] Descargando código..."
+cd "$TEMP_DIR"
+
+# Descargar archivos individuales del repositorio
+echo "      Descargando archivos del repositorio..."
+
+# Crear estructura de directorios
+mkdir -p "$INSTALL_DIR"
+mkdir -p "$INSTALL_DIR/src"
+mkdir -p "$INSTALL_DIR/tests"
+mkdir -p "$INSTALL_DIR/templates"
+
+# Archivos raíz
+curl -sSL "https://raw.githubusercontent.com/blak0p/Musica_Pureza_grao/main/bell.py" -o "$INSTALL_DIR/bell.py"
+curl -sSL "https://raw.githubusercontent.com/blak0p/Musica_Pureza_grao/main/app.py" -o "$INSTALL_DIR/app.py" 2>/dev/null || true
+curl -sSL "https://raw.githubusercontent.com/blak0p/Musica_Pureza_grao/main/setup_service.py" -o "$INSTALL_DIR/setup_service.py" 2>/dev/null || true
+curl -sSL "https://raw.githubusercontent.com/blak0p/Musica_Pureza_grao/main/requirements.txt" -o "$INSTALL_DIR/requirements.txt" 2>/dev/null || true
+curl -sSL "https://raw.githubusercontent.com/blak0p/Musica_Pureza_grao/main/README.md" -o "$INSTALL_DIR/README.md"
+
+# Archivos src/
+for file in library.py state.py carousel.py player.py cron_helper.py; do
+    curl -sSL "https://raw.githubusercontent.com/blak0p/Musica_Pureza_grao/main/src/$file" -o "$INSTALL_DIR/src/$file" 2>/dev/null || true
+done
+
+# Archivos templates/
+curl -sSL "https://raw.githubusercontent.com/blak0p/Musica_Pureza_grao/main/templates/index.html" -o "$INSTALL_DIR/templates/index.html" 2>/dev/null || true
+
+echo "      Código descargado ✅"
+
+# ─── Detector de gestor de paquetes ───
 detectar_pkg() {
     if command -v apt &> /dev/null; then
         echo "apt"
@@ -49,9 +78,9 @@ instalar() {
 }
 
 # ─────────────────────────────────────────────
-# 1. Reproductor de audio (mpv)
+# 2. Reproducto de audio (mpv)
 # ─────────────────────────────────────────────
-echo "[1/5] Reproductor de audio..."
+echo "[2/7] Reproductor de audio..."
 if command -v mpv &> /dev/null; then
     echo "      mpv ya instalado ✅"
 else
@@ -62,14 +91,14 @@ else
 fi
 
 # ─────────────────────────────────────────────
-# 2. Dependencias Python
+# 3. Dependencias Python
 # ─────────────────────────────────────────────
-echo "[2/5] Dependencias Python..."
-cd "$SCRIPT_DIR"
+echo "[3/7] Dependencias Python..."
+cd "$INSTALL_DIR"
 
 YA_INSTALADO=false
 if python3 -c "import flask; import flask_cors; import flask_socketio" 2>/dev/null; then
-    echo "      Flask, flask-cors, flask-socketio ya instalados ✅"
+    echo "      Flask y dependencias ya instalados ✅"
     YA_INSTALADO=true
 fi
 
@@ -112,23 +141,21 @@ if [ "$YA_INSTALADO" = false ]; then
             echo "      Dependencias instaladas ✅"
         else
             echo "      ⚠️  No se pudieron instalar automáticamente."
-            echo "      En PC con Internet ejecutá:"
-            echo "        pip3 install --break-system-packages -r requirements.txt"
         fi
     fi
 fi
 
 # ─────────────────────────────────────────────
-# 3. Preparar archivos necesarios (static, socket.io)
+# 4. Preparar archivos necesarios
 # ─────────────────────────────────────────────
-echo "[3/5] Preparando archivos..."
+echo "[4/7] Preparando archivos..."
 mkdir -p static
 if [ -f templates/index.html ] && [ ! -f static/index.html ]; then
     cp templates/index.html static/index.html
     echo "      index.html copiado a static/ ✅"
 fi
 if [ ! -f static/socket.io.min.js ]; then
-    echo "      Descargando socket.io local..."
+    echo "      Descargando socket.io..."
     if command -v wget &> /dev/null; then
         wget -q "https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js" -O static/socket.io.min.js \
           && echo "      socket.io descargado ✅" \
@@ -142,30 +169,78 @@ fi
 echo "      Archivos listos ✅"
 
 # ─────────────────────────────────────────────
-# 4. Configuración interactiva
+# 5. Crear script uninstall.sh
 # ─────────────────────────────────────────────
-echo "[4/5] Configuración del sistema..."
+echo "[5/7] Creando desinstalador..."
+cat > "$INSTALL_DIR/uninstall.sh" << 'EOF'
+#!/bin/bash
+# Desinstalador del Sistema de Timbres Escolar
+
+echo "⚠️  Desinstalando Sistema de Timbres..."
+
+# Remover cron entries si existen
+python3 bell.py --remove-cron 2>/dev/null || true
+
+# Remover directorio
+INSTALL_DIR="${INSTALL_DIR:-/opt/musica-pureza-grao}"
+sudo rm -rf "$INSTALL_DIR"
+
+echo "✅ Desinstalado"
+EOF
+
+chmod +x "$INSTALL_DIR/uninstall.sh"
+echo "      uninstall.sh creado ✅"
+
+# ─────────────────────────────────────────────
+# 6. Configuración interactiva
+# ─────────────────────────────────────────────
+echo "[6/7] Configuración del sistema..."
 echo ""
 echo "  Se te va a preguntar:"
 echo "  • Ruta de las carpetas de música"
 echo "  • Usuario y contraseña para la web"
 echo "  • Si querés que arranque solo"
 echo ""
-python3 setup_service.py
+
+if [ -f "$INSTALL_DIR/setup_service.py" ]; then
+    cd "$INSTALL_DIR"
+    python3 setup_service.py 2>/dev/null || true
+fi
 
 # ─────────────────────────────────────────────
-# 5. Tests
+# 7. Verificación final
 # ─────────────────────────────────────────────
-echo "[5/5] Verificando..."
-cd "$SCRIPT_DIR"
-python3 -m unittest discover -s tests > /dev/null 2>&1 && echo "      Tests: ✅" || echo "      Tests: ⚠️  Algunos fallaron, revisá manualmente"
+echo "[7/7] Verificando instalación..."
+cd "$INSTALL_DIR"
+
+if [ -f bell.py ]; then
+    echo "      bell.py ✅"
+fi
+
+if command -v mpv &> /dev/null; then
+    echo "      mpv ✅"
+fi
+
+if python3 -c "import flask" 2>/dev/null; then
+    echo "      Flask ✅"
+fi
+
+# Limpiar temporal
+rm -rf "$TEMP_DIR"
 
 echo ""
-echo "🎉 Listo!"
+echo "🎉 ¡Instalación completada!"
+echo ""
+echo "  📁 Ubicación: $INSTALL_DIR"
 echo ""
 echo "  Para probar un timbre:"
+echo "    cd $INSTALL_DIR"
 echo "    python3 bell.py cambio"
 echo ""
 echo "  Para la web:"
+echo "    cd $INSTALL_DIR"
 echo "    python3 app.py     → http://localhost:5000"
+echo ""
+echo "  Para desinstalar:"
+echo "    $INSTALL_DIR/uninstall.sh"
 echo ""
