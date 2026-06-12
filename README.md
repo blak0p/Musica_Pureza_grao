@@ -4,7 +4,7 @@ A robust school bell system for automated music playback.
 
 ## Description
 
-This system is designed for a school environment, running on a dedicated **always-on mini PC**. It replaces a legacy bash script with a modern Python application featuring a smart music carousel, persistent state, and automated scheduling via **crontab**.
+This system is designed for a school environment, running on a dedicated **always-on mini PC**. It replaces a legacy bash script with a modern Python application featuring a smart music carousel, persistent state management, and easy crontab integration.
 
 All code comments and internal logic are in Spanish (matching the school's language), while this documentation is in English for global accessibility.
 
@@ -28,14 +28,29 @@ All code comments and internal logic are in Spanish (matching the school's langu
 ## Installation
 
 ### Quick Install (Recommended)
-```bash
-curl -sSL https://raw.githubusercontent.com/Alejandro-M-P/Music_Carousel_Hours/main/install.sh | bash
-```
 
-### Manual Install
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/blak0p/Musica_Pureza_grao.git
+   cd Musica_Pureza_grao
+   ```
+
+2. **Make the install and uninstall scripts executable**:
+   ```bash
+   chmod +x install.sh
+   chmod +x uninstall.sh
+   ```
+
+3. **Run the installation script**:
+   ```bash
+   ./install.sh
+   ```
+
+### Manual Install (Alternative)
+
 1.  Ensure `mpv` is installed: `sudo apt-get install mpv`
-2.  Clone the repo: `git clone https://github.com/Alejandro-M-P/Music_Carousel_Hours.git`
-3.  Navigate to directory: `cd Music_Carousel_Hours`
+2.  Clone the repo: `git clone https://github.com/blak0p/Musica_Pureza_grao.git`
+3.  Navigate to directory: `cd Musica_Pureza_grao`
 
 ## Usage
 
@@ -51,6 +66,14 @@ python3 bell.py --remove-cron
 
 # Check last played and next in queue
 python3 bell.py --status
+```
+
+## Uninstallation
+
+To remove the application and crontab entries:
+
+```bash
+./uninstall.sh
 ```
 
 ## Testing
