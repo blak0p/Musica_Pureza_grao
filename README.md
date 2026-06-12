@@ -4,15 +4,26 @@ A robust school bell system for automated music playback.
 
 ## Installation
 
-### Quick Install (Recommended - No Git Required)
+### Quick Install (3 Simple Steps - No Git Required)
 
+**Step 1: Download the complete repository content with curl**
 ```bash
-curl -sSL https://raw.githubusercontent.com/blak0p/Musica_Pureza_grao/main/install.sh | bash
+curl -sSL https://github.com/blak0p/Musica_Pureza_grao/archive/refs/heads/main.zip -o musica-pureza.zip && unzip -q musica-pureza.zip && cd Musica_Pureza_grao-main
+```
+
+**Step 2: Make the installer executable**
+```bash
+chmod +x install.sh
+```
+
+**Step 3: Run the installer**
+```bash
+./install.sh
 ```
 
 That's it! The script will:
-- ✅ Download the complete code repository
-- ✅ Set executable permissions
+- ✅ Download and extract the complete code repository
+- ✅ Set executable permissions on all scripts
 - ✅ Install all system dependencies (mpv, Python, Flask)
 - ✅ Configure everything automatically
 
@@ -20,7 +31,7 @@ That's it! The script will:
 
 ## Description
 
-This system is designed for a school environment, running on a dedicated **always-on mini PC**. It replaces a legacy bash script with a modern Python application featuring a smart music carousel, persistent state management, and easy crontab integration.
+This system is designed for a school environment, running on a dedicated **always-on mini PC**. It replaces a legacy bash script with a modern Python application featuring a smart music carousel, [...]
 
 All code comments and internal logic are in Spanish (matching the school's language), while this documentation is in English for global accessibility.
 
