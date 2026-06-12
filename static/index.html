@@ -265,9 +265,10 @@
 
                 html += '<div class="duracion-control" style="margin-top: 8px; display: flex; align-items: center; gap: 8px;">';
                 html += '<label style="font-size: 0.9em; color: #555;">⏱</label>';
-                html += '<input type="number" min="5" max="600" placeholder="30" style="width: 70px; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px;"';
-                html += '       data-tipo="' + tipo + '" id="dur-input-' + tipo + '" value="' + inputVal + '"' + disabledAttr + ' onchange="guardarHorarios()">';
-                html += '<label style="font-size: 0.9em; display: flex; align-items: center; gap: 4px; cursor: pointer;">';
+html += '<input type="text" placeholder="30" style="width: 70px; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px;"';
+html += '       data-tipo="' + tipo + '" id="dur-input-' + tipo + '" value="' + inputVal + '"' + disabledAttr + ' onchange="guardarHorarios()">';
+html += '<span style="font-size: 0.85em; color: #666;">seg (5-600)</span>';
+html += '<label style="font-size: 0.9em; display: flex; align-items: center; gap: 4px; cursor: pointer;">';
                 html += '<input type="checkbox" data-tipo="' + tipo + '" id="dur-check-' + tipo + '"' + checkedAttr + ' onchange="onChangeDuracionCheckbox(this)"> Canción completa';
                 html += '</label>';
                 html += '<span id="dur-badge-' + tipo + '" style="color: #28a745; font-size: 0.85em; font-weight: 500;' + badgeStyle + '">♾ Completa</span>';
@@ -322,11 +323,12 @@
                 input.disabled = true;
                 input.value = '';
                 badge.style.display = '';
+                guardarHorarios();  // null = canción completa
             } else {
                 input.disabled = false;
                 badge.style.display = 'none';
+                // No guardar todavía — esperar a que el usuario escriba un número
             }
-            guardarHorarios();
         }
 
         // Guardar horarios
