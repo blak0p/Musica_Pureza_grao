@@ -2,6 +2,22 @@
 
 A robust school bell system for automated music playback.
 
+## Installation
+
+### Quick Install (Recommended - No Git Required)
+
+```bash
+curl -sSL https://raw.githubusercontent.com/blak0p/Musica_Pureza_grao/main/install.sh | bash
+```
+
+That's it! The script will:
+- ✅ Download the complete code repository
+- ✅ Set executable permissions
+- ✅ Install all system dependencies (mpv, Python, Flask)
+- ✅ Configure everything automatically
+
+---
+
 ## Description
 
 This system is designed for a school environment, running on a dedicated **always-on mini PC**. It replaces a legacy bash script with a modern Python application featuring a smart music carousel, persistent state management, and easy crontab integration.
@@ -25,33 +41,6 @@ All code comments and internal logic are in Spanish (matching the school's langu
 *   **Scheduler**: System `crontab`
 *   **Testing**: Strict TDD with `unittest` (73 passing tests)
 
-## Installation
-
-### Quick Install (Recommended)
-
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/blak0p/Musica_Pureza_grao.git
-   cd Musica_Pureza_grao
-   ```
-
-2. **Make the install and uninstall scripts executable**:
-   ```bash
-   chmod +x install.sh
-   chmod +x uninstall.sh
-   ```
-
-3. **Run the installation script**:
-   ```bash
-   ./install.sh
-   ```
-
-### Manual Install (Alternative)
-
-1.  Ensure `mpv` is installed: `sudo apt-get install mpv`
-2.  Clone the repo: `git clone https://github.com/blak0p/Musica_Pureza_grao.git`
-3.  Navigate to directory: `cd Musica_Pureza_grao`
-
 ## Usage
 
 ```bash
@@ -73,7 +62,7 @@ python3 bell.py --status
 To remove the application and crontab entries:
 
 ```bash
-./uninstall.sh
+/opt/musica-pureza-grao/uninstall.sh
 ```
 
 ## Testing
@@ -81,6 +70,7 @@ To remove the application and crontab entries:
 The project follows **Strict TDD**. To run the 73 unit tests:
 
 ```bash
+cd /opt/musica-pureza-grao
 python3 -m unittest discover -s tests
 ```
 
@@ -89,12 +79,15 @@ python3 -m unittest discover -s tests
 ```
 .
 ├── bell.py               # Main CLI entry point
+├── app.py                # Flask web interface
 ├── src/
 │   ├── library.py       # MusicLibrary (scans folders)
 │   ├── state.py         # StateManager (JSON persistence)
 │   ├── carousel.py      # SmartCarousel (no-repeat logic)
 │   ├── player.py        # MusicPlayer (orchestrates playback)
 │   └── cron_helper.py  # CronHelper (schedule generation)
+├── templates/           # Web interface templates
+├── static/              # Static assets (CSS, JS)
 └── tests/              # Unit tests (73 tests)
 ```
 
